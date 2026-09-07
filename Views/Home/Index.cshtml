@@ -1,0 +1,283 @@
+@{
+    ViewData["Title"] = "Chat App";
+}
+
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-3 border-0">
+            <div class="card-header bg-primary text-white fw-bold py-2">
+                User
+            </div>
+            <div class="card-body">
+                <div>
+                    <label class="form-label fw-semibold small text-muted">User Name</label>
+                    <input type="text" id="userInput" class="form-control" />
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-success text-white fw-bold py-2">
+                Groups
+            </div>
+            <div class="card-body">
+                <div class="input-group mb-3">
+                    <input type="text" id="groupInput" class="form-control" placeholder="Enter group name..." />
+                    <button type="button" id="btnJoinGroup" class="btn btn-success">Join Group</button>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold small text-muted d-block">My Joined Groups:</label>
+                    <div id="joinedGroupsBadges" class="d-flex flex-wrap gap-2">
+                        <span id="noGroupsNotice" class="text-muted small">None</span>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="form-label fw-semibold small text-muted">Target Group To Send Message:</label>
+                    <select id="targetGroupSelect" class="form-select form-select-sm">
+                        <option value="">-- Select Group --</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0 h-100 d-flex flex-column">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
+                <span class="fw-bold">Messages Stream</span>
+                <button type="button" id="btnClear" class="btn btn-sm btn-outline-light">Clear</button>
+            </div>
+
+            <div id="messagesList" class="card-body overflow-auto flex-grow-1" style="height: 400px; max-height: 480px; background-color: #f8f9fa;">
+            </div>
+
+            <div class="card-footer bg-white border-top p-3">
+                <div class="input-group mb-2">
+                    <input type="text" id="messageInput" class="form-control" placeholder="Type your message..." />
+                    <button type="button" id="btnSendAll" class="btn btn-primary px-4">Send (All)</button>
+                </div>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button type="button" id="btnSendOthers" class="btn btn-outline-warning text-dark btn-sm fw-semibold">Send (Others Only)</button>
+                    <button type="button" id="btnSendCaller" class="btn btn-outline-secondary btn-sm">Test (Caller Only)</button>
+                    <button type="button" id="btnSendGroup" class="btn btn-outline-success btn-sm fw-semibold">Send to Selected Group</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    const userInput = document.getElementById("userInput");
+    userInput.value = "User_" + Math.floor(1000 + Math.random() * 9000);
+
+    const connection = new signalR.HubConnectionBuilder()
+        .withUrl("/message")
+        .withAutomaticReconnect()
+        .build();
+
+    const badge = document.getElementById("connectionBadge");
+    const messagesList = document.getElementById("messagesList");
+    const targetGroupSelect = document.getElementById("targetGroupSelect");
+    const joinedGroupsBadges = document.getElementById("joinedGroupsBadges");
+    const noGroupsNotice = document.getElementById("noGroupsNotice");
+
+    const joinedGroups = new Set();
+
+    function renderJoinedGroups() {
+        joinedGroupsBadges.innerHTML = "";
+        targetGroupSelect.innerHTML = '<option value="">-- Select Group --</option>';
+
+        if (joinedGroups.size === 0) {
+            joinedGroupsBadges.appendChild(noGroupsNotice);
+            return;
+        }
+
+        joinedGroups.forEach(group => {
+            const pill = document.createElement("span");
+            pill.className = "badge bg-success d-inline-flex align-items-center gap-1 py-1 px-2";
+            pill.innerHTML = `<span>${escapeHtml(group)}</span>`;
+
+            const leaveBtn = document.createElement("button");
+            leaveBtn.type = "button";
+            leaveBtn.className = "btn-close btn-close-white";
+            leaveBtn.style.fontSize = "0.55rem";
+            leaveBtn.setAttribute("aria-label", "Leave");
+            leaveBtn.addEventListener("click", () => {
+                leaveGroupAction(group);
+            });
+
+            pill.appendChild(leaveBtn);
+            joinedGroupsBadges.appendChild(pill);
+
+            const opt = document.createElement("option");
+            opt.value = group;
+            opt.textContent = group;
+            targetGroupSelect.appendChild(opt);
+        });
+
+        if (joinedGroups.size > 0) {
+            targetGroupSelect.value = Array.from(joinedGroups)[joinedGroups.size - 1];
+        }
+    }
+
+    function appendMessage(sender, text, type, groupName = "") {
+        const wrapper = document.createElement("div");
+        wrapper.className = "mb-2 p-2 rounded border bg-white shadow-sm";
+
+        let badgeClass = "bg-primary";
+        let badgeText = "Public";
+
+        if (type === "group") {
+            badgeClass = "bg-success";
+            badgeText = `Group: ${groupName}`;
+        } else if (type === "others") {
+            badgeClass = "bg-warning text-dark";
+            badgeText = "Others Only";
+        } else if (type === "system") {
+            badgeClass = "bg-info text-dark";
+            badgeText = "System";
+        } else if (type === "caller") {
+            badgeClass = "bg-secondary";
+            badgeText = "Caller";
+        }
+
+        const time = new Date().toLocaleTimeString();
+        wrapper.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <span>
+                    <span class="badge ${badgeClass} me-1">${badgeText}</span>
+                    <strong>${escapeHtml(sender)}</strong>
+                </span>
+                <span class="text-muted small">${time}</span>
+            </div>
+            <div class="text-break">${escapeHtml(text)}</div>
+        `;
+        messagesList.appendChild(wrapper);
+        messagesList.scrollTop = messagesList.scrollHeight;
+    }
+
+    function escapeHtml(str) {
+        if (!str) return "";
+        return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    connection.on("ReceiveMessage", function(user, message) {
+        appendMessage(user, message, "public");
+    });
+
+    connection.on("ReceiveOthersMessage", function(user, message) {
+        appendMessage(user, message, "others");
+    });
+
+    connection.on("ReceiveGroupMessage", function(group, user, message) {
+        appendMessage(user, message, "group", group);
+    });
+
+    connection.on("ReceiveCallerNotification", function(message) {
+        appendMessage("Server", message, "caller");
+    });
+
+    connection.onreconnecting(() => {
+        badge.className = "badge bg-warning text-dark";
+        badge.innerText = "Reconnecting...";
+    });
+
+    connection.onreconnected(() => {
+        badge.className = "badge bg-success";
+        badge.innerText = "Connected";
+    });
+
+    connection.onclose(() => {
+        badge.className = "badge bg-danger";
+        badge.innerText = "Disconnected";
+    });
+
+    connection.start().then(function() {
+        badge.className = "badge bg-success";
+        badge.innerText = "Connected";
+    }).catch(function() {
+        badge.className = "badge bg-danger";
+        badge.innerText = "Connection Failed";
+    });
+
+    function leaveGroupAction(group) {
+        const user = userInput.value.trim();
+        connection.invoke("LeaveGroup", group, user).then(() => {
+            joinedGroups.delete(group);
+            renderJoinedGroups();
+        });
+    }
+
+    document.getElementById("btnJoinGroup").addEventListener("click", function() {
+        const groupInput = document.getElementById("groupInput");
+        const group = groupInput.value.trim();
+        const user = userInput.value.trim();
+        if (!group) {
+            alert("Please enter a group name.");
+            return;
+        }
+        if (joinedGroups.has(group)) {
+            alert("You have already joined this group.");
+            return;
+        }
+        connection.invoke("JoinGroup", group, user).then(() => {
+            joinedGroups.add(group);
+            renderJoinedGroups();
+            groupInput.value = "";
+        });
+    });
+
+    document.getElementById("btnSendAll").addEventListener("click", function() {
+        const user = userInput.value.trim();
+        const msgInput = document.getElementById("messageInput");
+        const msg = msgInput.value.trim();
+        if (user && msg) {
+            connection.invoke("SendToAll", user, msg);
+            msgInput.value = "";
+        }
+    });
+
+    document.getElementById("btnSendOthers").addEventListener("click", function() {
+        const user = userInput.value.trim();
+        const msgInput = document.getElementById("messageInput");
+        const msg = msgInput.value.trim();
+        if (user && msg) {
+            connection.invoke("SendToOthers", user, msg);
+            msgInput.value = "";
+        }
+    });
+
+    document.getElementById("btnSendCaller").addEventListener("click", function() {
+        connection.invoke("SendToCaller", "Direct confirmation from server for caller only.");
+    });
+
+    document.getElementById("btnSendGroup").addEventListener("click", function() {
+        const selectedGroup = targetGroupSelect.value;
+        const user = userInput.value.trim();
+        const msgInput = document.getElementById("messageInput");
+        const msg = msgInput.value.trim();
+        if (!selectedGroup) {
+            alert("Please join a group first and select it from the dropdown.");
+            return;
+        }
+        if (!msg) {
+            return;
+        }
+        connection.invoke("SendToGroup", selectedGroup, user, msg);
+        msgInput.value = "";
+    });
+
+    document.getElementById("messageInput").addEventListener("keydown", function(e) {
+        if (e.key === "Enter") {
+            document.getElementById("btnSendAll").click();
+        }
+    });
+
+    document.getElementById("btnClear").addEventListener("click", function() {
+        messagesList.innerHTML = "";
+    });
+</script>
+}

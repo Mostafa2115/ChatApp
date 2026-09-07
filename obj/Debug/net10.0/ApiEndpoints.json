@@ -1,0 +1,18 @@
+[
+  {
+    "ContainingType": "ChatApp.Controllers.AnnouncementController",
+    "Method": "PostAnnouncement",
+    "RelativePath": "api/Announcement",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "request",
+        "Type": "ChatApp.Models.AnnouncementRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  }
+]
